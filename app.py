@@ -7,12 +7,12 @@ import openai
 
 app = Flask(__name__)
 
-# LINE 憑證
-line_bot_api = LineBotApi(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.environ.get("LINE_CHANNEL_SECRET"))
+# LINE credentials
+line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
+handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 
-# OpenAI API Key
-openai.api_key = os.environ.get("OPENAI_API_KEY")
+# OpenAI API key
+openai.api_key = os.environ["OPENAI_API_KEY"]
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -26,32 +26,42 @@ def webhook():
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    text = event.message.text
+    text = event.message.text.strip()
+
     if text.lower().startswith("@t"):
         content = text[2:].strip()
         if content:
             try:
-                translated = translate_with_openai(content)
+                translated = translate(content)
                 line_bot_api.reply_message(
-                    event.reply_token, TextSendMessage(text=translated)
+                    event.reply_token,
+                    TextSendMessage(text=translated)
                 )
             except Exception as e:
                 line_bot_api.reply_message(
                     event.reply_token,
-                    TextSendMessage(text=f"⚠️ 翻譯錯誤：\n{str(e)}"),
+                    TextSendMessage(text=f"⚠️ 翻譯錯誤：\n{str(e)}")
                 )
 
-def translate_with_openai(text):
-    prompt = f"Translate the following message:\n{text}"
+def translate(text):
+    if contains_chinese(text):
+        prompt = f"Translate the following text to English:\n{text}"
+    else:
+        prompt = f"請將以下內容翻譯成繁體中文：\n{text}"
+
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
+            {"role": "system", "content": "你是一個翻譯助手。"},
             {"role": "user", "content": prompt}
         ],
         temperature=0.7,
-        max_tokens=500,
+        max_tokens=1000
     )
-    return response.choices[0].message.content.strip()
+    return response["choices"][0]["message"]["content"].strip()
+
+def contains_chinese(text):
+    return any('\u4e00' <= c <= '\u9fff' for c in text)
 
 if __name__ == "__main__":
     app.run()
