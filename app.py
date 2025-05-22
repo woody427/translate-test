@@ -43,24 +43,36 @@ def contains_chinese(text):
     return any('\u4e00' <= char <= '\u9fff' for char in text)
 
 def translate(text):
-    url = "https://libretranslate.de/translate"
-
-    source_lang = "zh" if contains_chinese(text) else "en"
-    target_lang = "en" if contains_chinese(text) else "zh"
-
-    payload = {
-        "q": text,
-        "source": source_lang,
-        "target": target_lang,
-        "format": "text"
-    }
+    """
+    使用 LibreTranslate.com API 進行免費翻譯
+    中文 → 英文、英文 → 中文
+    """
+    if contains_chinese(text):
+        source = "zh"
+        target = "en"
+    else:
+        source = "en"
+        target = "zh"
 
     try:
-        response = requests.post(url, data=payload, timeout=10)
-        data = response.json()
-        return data.get("translatedText", "⚠️ 翻譯失敗")
+        response = requests.post(
+            "https://libretranslate.com/translate",
+            headers={"Content-Type": "application/json"},
+            json={
+                "q": text,
+                "source": source,
+                "target": target,
+                "format": "text"
+            },
+            timeout=10
+        )
+        if response.status_code == 200:
+            return response.json()["translatedText"]
+        else:
+            return f"翻譯失敗，狀態碼 {response.status_code}"
     except Exception as e:
-        return f"⚠️ 翻譯錯誤：{str(e)}"
+        return f"⚠️翻譯錯誤：{str(e)}"
+
 
 if __name__ == "__main__":
     app.run()
