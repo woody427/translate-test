@@ -13,6 +13,9 @@ handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
 def webhook():
     signature = request.headers["X-Line-Signature"]
     body = request.get_data(as_text=True)
+    
+    print(f"[Webhook] Received body: {body}")
+    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
