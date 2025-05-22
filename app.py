@@ -1,29 +1,25 @@
 import os
+import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
 
 app = Flask(__name__)
 
-# 初始化 LINE Bot API
-line_bot_api = LineBotApi(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"))
-handler = WebhookHandler(os.environ.get("LINE_CHANNEL_SECRET"))
-
-# 初始化 OpenAI
-openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
+handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
+openai_api_key = os.environ.get("OPENAI_API_KEY")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    signature = request.headers.get("X-Line-Signature")
+    signature = request.headers["X-Line-Signature"]
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-
     return "OK"
 
 @handler.add(MessageEvent, message=TextMessage)
@@ -33,26 +29,47 @@ def handle_message(event):
         content = text[2:].strip()
         if content:
             try:
-                reply = translate_with_openai(content)
+                translated = translate(content)
             except Exception as e:
-                reply = f"\ud83d\udea8 翻譯錯誤\uff1a\n{str(e)}"
-        else:
-            reply = "\u8acb\u5728 @T \u5f8c\u8cbc\u4e0a\u60f3\u7ffb\u8b6f\u7684\u6587\u5b57"
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply)
-        )
+                translated = f"\ud83d\uded1 翻譯錯誤：\n{e}"
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=translated)
+            )
 
-def translate_with_openai(content):
-    system_prompt = "You are a translation assistant. Translate between Chinese and English depending on input."
-    response = openai_client.chat.completions.create(
+def translate(text):
+    try:
+        return openai_translate(text)
+    except Exception:
+        return libretranslate(text)
+
+def openai_translate(text):
+    import openai
+    openai.api_key = openai_api_key
+    prompt = f"Translate this into {'English' if contains_chinese(text) else 'Traditional Chinese'}: {text}"
+    response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": content}
-        ]
+        messages=[{"role": "user", "content": prompt}],
+        timeout=10
     )
     return response.choices[0].message.content.strip()
 
+def libretranslate(text):
+    url = "https://libretranslate.de/translate"
+    source = "zh" if contains_chinese(text) else "en"
+    target = "en" if source == "zh" else "zh"
+    payload = {
+        "q": text,
+        "source": source,
+        "target": target,
+        "format": "text"
+    }
+    response = requests.post(url, json=payload, timeout=10)
+    response.raise_for_status()
+    return response.json()["translatedText"]
+
+def contains_chinese(text):
+    return any('\u4e00' <= char <= '\u9fff' for char in text)
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run()
