@@ -7,9 +7,12 @@ import openai
 
 app = Flask(__name__)
 
-line_bot_api = LineBotApi(os.environ["LINE_CHANNEL_ACCESS_TOKEN"])
-handler = WebhookHandler(os.environ["LINE_CHANNEL_SECRET"])
-openai.api_key = os.environ["OPENAI_API_KEY"]
+# LINE 憑證
+line_bot_api = LineBotApi(os.environ.get("LINE_CHANNEL_ACCESS_TOKEN"))
+handler = WebhookHandler(os.environ.get("LINE_CHANNEL_SECRET"))
+
+# OpenAI API Key
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -33,20 +36,20 @@ def handle_message(event):
                     event.reply_token, TextSendMessage(text=translated)
                 )
             except Exception as e:
-                error_msg = f"⚠️ 翻譯錯誤：\n{str(e)}"
                 line_bot_api.reply_message(
-                    event.reply_token, TextSendMessage(text=error_msg)
+                    event.reply_token,
+                    TextSendMessage(text=f"⚠️ 翻譯錯誤：\n{str(e)}"),
                 )
 
 def translate_with_openai(text):
-    is_chinese = any('\u4e00' <= ch <= '\u9fff' for ch in text)
-    prompt = f"請將以下句子翻譯成{'英文' if is_chinese else '中文'}：\n{text}"
+    prompt = f"Translate the following message:\n{text}"
     response = openai.ChatCompletion.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "你是一個翻譯機器人，請根據使用者語言將輸入翻譯成目標語言。"},
             {"role": "user", "content": prompt}
-        ]
+        ],
+        temperature=0.7,
+        max_tokens=500,
     )
     return response.choices[0].message.content.strip()
 
